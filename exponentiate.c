@@ -159,28 +159,22 @@ int exponentiate_sliding_window(mpz_t result, mpz_t g, mpz_t e, mpz_t modulus, i
     //index will store the current window of the exponent
     mpz_t index;
     mpz_init(index);
-    //read very first window of exponent and store it in index. Therefore, no multiplication will be needed.
-    for(int i = 0; i < k; i++){
-        if(mpz_tstbit(e,l-i-1)){
-            mpz_setbit(index, k-i-1);
-        }
-    }
-    //use the first window from above and initialize 'result' using the LUT instead of squaring/multiplying with 1.
-    mpz_set(result, lut[mpz_get_ui(index) / 2]);
     mpz_set_ui(index, 0);
+    int last_bit_index;
     //compute rest of the exponent using the sliding window algorithm.
-    for(int i = l-1-k; i >= 0; i--){
+    for(int i = l-1; i >= 0; i--){
         if(mpz_tstbit(e, i) == 0){
             //printf("we found a 0 at %d and squared\n", i);
-            //we need to sqaure and skip to the next bit
+            //we need to square and skip to the next bit
             mpz_mul(result, result, result);
             mpz_mod(result, result, modulus);
+            //gmp_printf("result is now = %Zd\n", result);
             (*count_S)++;
             continue;
         }else{
             //determine the position of the last 1-bit in the maximum possible range
             //printf("we found a 1 at %d\n", i);
-            int last_bit_index = i;
+            last_bit_index = i;
             for(int j = i-k+1; j < i; j++){
                 //printf("watching at %d\n", j);
                 if(mpz_tstbit(e, j) == 1){
@@ -193,26 +187,33 @@ int exponentiate_sliding_window(mpz_t result, mpz_t g, mpz_t e, mpz_t modulus, i
             //read the window bits and store it in index
             for(int j = last_bit_index; j < i+1; j++){
                 if(mpz_tstbit(e, j)){
-                    //printf("set index to 1 at pos %d\n", j-last_bit_index);
+                   // printf("set index to 1 at pos %d\n", j-last_bit_index);
                     mpz_setbit(index, j-last_bit_index);
                 }
             }
+            if(i < l-1){
+            //always true but not in the first round...wen can use set() and dont need to sqaure and mul -> see else branch
             //now we need to create space for the next window
-            for(int j = 0; j < i-last_bit_index+1; j++){
-                mpz_mul(result, result, result);
+                for(int j = 0; j < i-last_bit_index+1; j++){
+                    mpz_mul(result, result, result);
+                    mpz_mod(result, result, modulus);
+                    (*count_S)++;
+                }
+                //printf("we squared %d times\n", i-last_bit_index+1);
+                //now we can multiply with the corresponding LUT entry
+                mpz_mul(result, result, lut[mpz_get_ui(index) / 2]);
                 mpz_mod(result, result, modulus);
-                (*count_S)++;
+                (*count_M)++;
+                //gmp_printf("we multiplied with %Zd\n", lut[mpz_get_ui(index) / 2]);
+                //gmp_printf("result is now = %Zd\n", result);
+            }else{
+                mpz_set(result, lut[mpz_get_ui(index) / 2]);
+
             }
-            //printf("we squared %d times\n", i-last_bit_index+1);
-            //now we can multiply with the corresponding LUT entry
-            mpz_mul(result, result, lut[mpz_get_ui(index) / 2]);
-            mpz_mod(result, result, modulus);
-            (*count_M)++;
-            //gmp_printf("we multiplied with %Zd\n", index);
             //reset index variable for futher computations
             mpz_set_ui(index, 0);
             //decrease i because we computed multiple bits
-            i -= (i-last_bit_index);
+            i = last_bit_index;
         }
     }
     //free the array
@@ -231,9 +232,7 @@ size_t get_fb_LUT_size(size_t maximal_exponent_length) {
 	return maximal_exponent_length;
 }
 
-
-size_t get_imp_fb_LUT_size(size_t maximal_exponent_length, unsigned window_size) {
-   
+size_t get_imp_fb_LUT_size(size_t maximal_exponent_length, unsigned window_size) {   
     if((maximal_exponent_length)%window_size == 0){
        return maximal_exponent_length/window_size;
     }else{
@@ -242,7 +241,6 @@ size_t get_imp_fb_LUT_size(size_t maximal_exponent_length, unsigned window_size)
 
     return 0;
 }
-
 
 mpz_t *allocate_fixed_base_LUT(size_t lut_size) {
     mpz_t * lut = malloc(lut_size * sizeof(mpz_t));
@@ -253,13 +251,11 @@ mpz_t *allocate_fixed_base_LUT(size_t lut_size) {
     return lut;
 }
 
-
 void free_fixed_base_LUT(mpz_t *lut, size_t lut_size) {
     for(int i = 0; i < lut_size; i++){
         mpz_clear(lut[i]);
     }
 }
-
 
 void precompute_fixed_base_LUT(mpz_t *lut, mpz_t g, mpz_t n, size_t lut_size) {
      mpz_set(*lut, g);
@@ -267,9 +263,7 @@ void precompute_fixed_base_LUT(mpz_t *lut, mpz_t g, mpz_t n, size_t lut_size) {
         mpz_mul(*(lut+i), *(lut+i-1), *(lut+i-1));
         mpz_mod(*(lut+i),*(lut+i), n);
      }
-
 }
-
 
 void precompute_improved_fixed_base_LUT(mpz_t *lut, mpz_t g, mpz_t modulus, size_t lut_size, unsigned window_size) {
     
@@ -284,9 +278,7 @@ void precompute_improved_fixed_base_LUT(mpz_t *lut, mpz_t g, mpz_t modulus, size
             mpz_mod(*(lut+i),*(lut+i), modulus);
         }
      }
-
 }
-
 
 int exponentiate_fixed_based(mpz_t result, mpz_t e, mpz_t modulus, mpz_t *lut, size_t maximal_exponent_length, long *count_S, long *count_M) {
 	//first one is "geschenkt"
@@ -300,10 +292,8 @@ int exponentiate_fixed_based(mpz_t result, mpz_t e, mpz_t modulus, mpz_t *lut, s
             (*count_M)++;
         }
 	}
-
 	return 0; 
 }
-
 
 int exponentiate_improved_fixed_based(mpz_t result, mpz_t e, mpz_t modulus, mpz_t *lut, size_t maximal_exponent_length, unsigned window_size, long *count_S, long *count_M) {
 
@@ -350,12 +340,8 @@ int exponentiate_improved_fixed_based(mpz_t result, mpz_t e, mpz_t modulus, mpz_
     mpz_clear(B);
     mpz_clear(mask);
     free(eInBaseB);
-
 return 0;
-
 }
-
-
 
 int ecc_double_add(mpz_t resultX, mpz_t resultY, mpz_t a, mpz_t b, mpz_t p, mpz_t q, mpz_t inputX, mpz_t inputY, mpz_t factor, long *count_D, long *count_A)
 {
@@ -376,16 +362,12 @@ int ecc_double_add(mpz_t resultX, mpz_t resultY, mpz_t a, mpz_t b, mpz_t p, mpz_
             (*count_A)++;
         }
     }
-
 	return 0;
 }
 
-
 int ecc_naf_double_add(mpz_t resultX, mpz_t resultY, mpz_t a, mpz_t b, mpz_t p, mpz_t q, mpz_t inputX, mpz_t inputY, mpz_t factor, long *count_D, long *count_A)
 {
-
 	mpz_mod(factor, factor, q);
-
 	unsigned l = mpz_sizeinbase(factor, 2);
 	//store naf representation in array. potentially one bit longer
 	int naf[l+1];
@@ -412,14 +394,12 @@ int ecc_naf_double_add(mpz_t resultX, mpz_t resultY, mpz_t a, mpz_t b, mpz_t p, 
         mpz_fdiv_q_ui(factor, factor, 2);
         i++;
 	}
-
 	//double and add with naf representation
 	//fiqure out where the first one is
 	//printf("NAF REP:\n");
     for(int i = 0; i < l+1; i++){
         //printf("%d: %d\n", i, naf[i]);
     }
-
 	int starting_point;
 	if(naf[l] == 1){
         //printf("starting at l-1 \n");
@@ -447,9 +427,6 @@ int ecc_naf_double_add(mpz_t resultX, mpz_t resultY, mpz_t a, mpz_t b, mpz_t p, 
             ecc_op_add(resultX, resultY, a, b, p, resultX, resultY, inputX, invInputY);
             (*count_A)++;
         }
-
     }
-
-
 	return 0; 
 }
