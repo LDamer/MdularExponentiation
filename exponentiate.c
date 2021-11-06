@@ -234,7 +234,11 @@ size_t get_fb_LUT_size(size_t maximal_exponent_length) {
 
 size_t get_imp_fb_LUT_size(size_t maximal_exponent_length, unsigned window_size) {
    
-    //TBD
+    if((maximal_exponent_length)%window_size == 0){
+       return maximal_exponent_length/window_size;
+    }else{
+        return (maximal_exponent_length)/window_size + 1;
+    }
 
     return 0;
 }
@@ -269,7 +273,17 @@ void precompute_fixed_base_LUT(mpz_t *lut, mpz_t g, mpz_t n, size_t lut_size) {
 
 void precompute_improved_fixed_base_LUT(mpz_t *lut, mpz_t g, mpz_t modulus, size_t lut_size, unsigned window_size) {
     
-     //TBD
+    mpz_set(*lut, g);
+    for(int i = 1; i < lut_size; i++){
+        //square it
+        mpz_mul(*(lut+i), *(lut+i-1), *(lut+i-1));
+        mpz_mod(*(lut+i),*(lut+i), modulus);
+        for(int j = 0; j < window_size-1; j++){
+            //sqaure it the neccessary times according to b or window_size.
+            mpz_mul(*(lut+i), *(lut+i), *(lut+i));
+            mpz_mod(*(lut+i),*(lut+i), modulus);
+        }
+     }
 
 }
 
@@ -293,9 +307,52 @@ int exponentiate_fixed_based(mpz_t result, mpz_t e, mpz_t modulus, mpz_t *lut, s
 
 int exponentiate_improved_fixed_based(mpz_t result, mpz_t e, mpz_t modulus, mpz_t *lut, size_t maximal_exponent_length, unsigned window_size, long *count_S, long *count_M) {
 
- 	//TBD
+    mpz_set_ui(result, 1); //A
+    mpz_t B;
+    mpz_init(B);
+    mpz_set_ui(B, 1);//B
+    int t;
+    int t = maximal_exponent_length/window_size;
+    if((maximal_exponent_length)%window_size == 0){
+       t -= 1;
+    }
+	int b = 1 << (window_size);
+    //compute e in base b.
+    mpz_t * eInBaseB = malloc((t+1) * sizeof(mpz_t));
+    mpz_t mask;
+    mpz_init(mask);
+    mpz_set_ui(mask, 1);
+    for(int i = 0; i < window_size-1; i++){
+        mpz_mul_2exp (mask, mask, 1);
+        mpz_setbit(mask, 0);
+    }
+    mpz_mul_2exp (mask, mask, t*window_size);
+    //go through e with the mask
+    for(int i = 0; i < t+1; i++){
+        mpz_init(*(eInBaseB+i));
+        mpz_and(*(eInBaseB+i), e, mask);
+        mpz_tdiv_q_2exp(*(eInBaseB+i), *(eInBaseB+i), (t-i)*window_size);
+        mpz_tdiv_q_2exp(mask, mask, window_size);
+    }
+    //actual algorithm from script
+    for(int j = b-1; j > 0; j--){
+        for(int i = 0; i <= t; i++){
+       	    if(mpz_cmp_ui(*(eInBaseB+i), j) == 0){
+                mpz_mul(B, B, lut[t-i]);
+                mpz_mod(B, B, modulus);
+                (*count_M)++;
+            }
+        }
+        mpz_mul(result, result, B);
+        mpz_mod(result, result, modulus);
+        (*count_M)++;
+    }
+    mpz_clear(B);
+    mpz_clear(mask);
+    free(eInBaseB);
 
-	return 0; 
+return 0;
+
 }
 
 
